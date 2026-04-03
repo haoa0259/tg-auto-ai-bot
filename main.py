@@ -1,70 +1,62 @@
+import asyncio
+import aiohttp
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
-import aiohttp
 
-# ========== 我已经帮你填好 ==========
-BOT_TOKEN = "8759872051:AAEtPVCsQq-uNtrOkOfGhb3baXOapNzr91w"
-YOUR_TG_ID = 8475704328
-AI_API_KEY = "sk-d2509e77f1b54821bb6f4b604ea3ef05"
-# ==================================
+# Configuration
+BOT_TOKEN = "8939740373:AAH6zQZ7eFZ9K5k9z7L9M8N0O9P1Q2R3S4T5U6V7W8X9Y0Z"
+YOUR_USER_ID = 822241945
+API_KEY = "sk-4e042e035445449f8f23c97e249f0f29"
+API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-AI_URL = "https://api.deepseek.com/chat/completions"
-HEADERS = {
-    "Authorization": f"Bearer {AI_API_KEY}",
-    "Content-Type": "application/json"
-}
-
-async def get_ai_reply(text: str) -> str:
+async def get_ai_response(text: str):
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
     payload = {
         "model": "deepseek-chat",
         "messages": [
-            {"role": "system", "content": "你是一个高智商、逻辑严谨、思维深度强、说话自然聪明的AI助手，回答简洁不啰嗦"},
+            {"role": "system", "content": "You are a helpful assistant. Respond naturally, concisely, and casually."},
             {"role": "user", "content": text}
         ],
-        "temperature": 0.8
+        "temperature": 0.7
     }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(AI_URL, headers=HEADERS, json=payload) as resp:
-                res = await resp.json()
-                return res["choices"][0]["message"]["content"].strip()
+            async with session.post(API_URL, headers=headers, json=payload, timeout=15) as resp:
+                if resp.status != 200:
+                    return f"API Error (Status: {resp.status})"
+                data = await resp.json()
+                return data["choices"][0]["message"]["content"]
     except Exception as e:
-        return "我思考一下，请稍等…"
+        return f"Request Failed: {str(e)}"
 
-async def auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes):
     message = update.effective_message
-    chat = update.effective_chat
-    user = update.effective_user
-
-    if not message or not user:
+    if not message or not message.text:
         return
 
-    is_mention_me = False
-
-    # 群里 @ 你
+    mentioned = False
     if message.entities:
-        for ent in message.entities:
-            if ent.type == "mention":
-                is_mention_me = True
+        for entity in message.entities:
+            if entity.type == "mention" and entity.user and entity.user.id == YOUR_USER_ID:
+                mentioned = True
+    if message.reply_to_message and message.reply_to_message.from_user.id == YOUR_USER_ID:
+        mentioned = True
 
-    # 回复你的消息
-    if message.reply_to_message:
-        if message.reply_to_message.from_user.id == YOUR_TG_ID:
-            is_mention_me = True
-
-    if not is_mention_me:
+    if not mentioned:
         return
 
-    text = message.text or ""
-    if not text:
-        return
-
-    reply = await get_ai_reply(text)
+    reply = await get_ai_response(message.text)
     await message.reply_text(reply)
+
+async def start(update: Update, context: ContextTypes):
+    await message.reply_text("✅ Bot online. I will auto-reply when you are mentioned.")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.run_polling()
 
 if __name__ == "__main__":
